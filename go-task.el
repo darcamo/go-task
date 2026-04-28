@@ -30,6 +30,7 @@
 (require 'seq)
 (require 'subr-x)
 (require 'json)
+(require 'tabulated-list)
 
 
 (defgroup go-task nil
@@ -176,15 +177,41 @@ With PREFIX (\[universal-argument]), run the default task without prompting."
 
 ;;;###autoload
 (defun go-task-list-tasks ()
-  "Show the output of `go-task --list' in a dedicated buffer."
+  "Show available go-task tasks in a tabulated list buffer."
   (interactive)
-  (let ((output (go-task--call-or-error "--list")))
+  (let ((tasks (go-task--get-tasks)))
     (with-current-buffer (get-buffer-create "*go-task tasks*")
       (let ((inhibit-read-only t))
         (erase-buffer)
-        (insert output)
-        (goto-char (point-min))
-        (view-mode 1))
+        (tabulated-list-mode)
+        (setq-local tabulated-list-format
+                    [("Task" 30 t)
+                     ("Description" 50 t)
+                     ("Up-to-date" 12 t)])
+        (setq-local tabulated-list-entries
+                    (mapcar
+                     (lambda (task)
+                       (let* ((name (or (plist-get task :name) ""))
+                               (desc (or (plist-get task :desc) ""))
+                               (up-to-date-value (plist-get task :up_to_date))
+                               (is-up-to-date
+                                (and up-to-date-value
+                                     (not (eq up-to-date-value :json-false))))
+                               (up-to-date
+                                (if is-up-to-date
+                                    "yes"
+                                  "no")))
+                          (list name
+                                (vector
+                                 (propertize name 'face 'font-lock-function-name-face)
+                                 (propertize desc 'face 'font-lock-doc-face)
+                                 (propertize up-to-date
+                                             'face (if is-up-to-date
+                                                       'success
+                                                     'error))))))
+                     tasks))
+        (tabulated-list-init-header)
+        (tabulated-list-print t))
       (display-buffer (current-buffer)))))
 
 (provide 'go-task)
