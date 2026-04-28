@@ -136,6 +136,32 @@ are the corresponding task. This list is suitable for `completing-read'."
     (seq-map (lambda (task) (cons (plist-get task :name) task)) tasks)))
 
 
+(defvar go-task-list-tasks-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map tabulated-list-mode-map)
+    (define-key map (kbd "RET") #'go-task-list-tasks-run-task)
+    map)
+  "Keymap for `go-task-list-tasks-mode'.")
+
+
+(define-derived-mode
+ go-task-list-tasks-mode
+ tabulated-list-mode
+ "go-task-tasks"
+ "Major mode for listing go-task tasks."
+ (setq-local tabulated-list-format
+             [("Task" 30 t) ("Description" 50 t) ("Up-to-date" 12 t)])
+ (tabulated-list-init-header))
+
+
+(defun go-task-list-tasks-run-task ()
+  "Run the task on the current line in `go-task-list-tasks-mode'."
+  (interactive)
+  (if-let* ((task-name (tabulated-list-get-id)))
+      (go-task--run-command task-name)
+    (user-error "No task on current line")))
+
+
 ;;;###autoload
 (defun go-task-run-task (prefix)
   "Prompt for a task and run it via go-task.
@@ -183,34 +209,31 @@ With PREFIX (\[universal-argument]), run the default task without prompting."
     (with-current-buffer (get-buffer-create "*go-task tasks*")
       (let ((inhibit-read-only t))
         (erase-buffer)
-        (tabulated-list-mode)
-        (setq-local tabulated-list-format
-                    [("Task" 30 t)
-                     ("Description" 50 t)
-                     ("Up-to-date" 12 t)])
+        (go-task-list-tasks-mode)
         (setq-local tabulated-list-entries
                     (mapcar
                      (lambda (task)
                        (let* ((name (or (plist-get task :name) ""))
-                               (desc (or (plist-get task :desc) ""))
-                               (up-to-date-value (plist-get task :up_to_date))
-                               (is-up-to-date
-                                (and up-to-date-value
-                                     (not (eq up-to-date-value :json-false))))
-                               (up-to-date
-                                (if is-up-to-date
-                                    "yes"
-                                  "no")))
-                          (list name
-                                (vector
-                                 (propertize name 'face 'font-lock-function-name-face)
-                                 (propertize desc 'face 'font-lock-doc-face)
-                                 (propertize up-to-date
-                                             'face (if is-up-to-date
-                                                       'success
-                                                     'error))))))
+                              (desc (or (plist-get task :desc) ""))
+                              (up-to-date-value (plist-get task :up_to_date))
+                              (is-up-to-date
+                               (and up-to-date-value
+                                    (not (eq up-to-date-value :json-false))))
+                              (up-to-date
+                               (if is-up-to-date
+                                   "yes"
+                                 "no")))
+                         (list
+                          name
+                          (vector
+                           (propertize name 'face 'font-lock-function-name-face)
+                           (propertize desc 'face 'font-lock-doc-face)
+                           (propertize up-to-date
+                                       'face
+                                       (if is-up-to-date
+                                           'success
+                                         'error))))))
                      tasks))
-        (tabulated-list-init-header)
         (tabulated-list-print t))
       (display-buffer (current-buffer)))))
 
