@@ -73,7 +73,7 @@ Return the trimmed command output on success."
              "")))
 
 
-;;;###autoload (autoload 'go-task-init "go-task")
+;;;###autoload
 (defun go-task-init ()
   "Run `go-task --init' to generate a Taskfile."
   (interactive)
@@ -94,7 +94,7 @@ Return the trimmed command output on success."
         (user-error "No go-task tasks found"))))
 
 
-;;;###autoload (autoload 'go-task-run-task "go-task")
+;;;###autoload
 (defun go-task-run-task (prefix)
   "Prompt for a task and run it via go-task.
 With PREFIX (\[universal-argument]), run the default task without prompting."
@@ -108,7 +108,7 @@ With PREFIX (\[universal-argument]), run the default task without prompting."
       (go-task--run-command choice))))
 
 
-;;;###autoload (autoload 'go-task-list-tasks "go-task")
+;;;###autoload
 (defun go-task-list-tasks ()
   "Show the output of `go-task --list' in a dedicated buffer."
   (interactive)
