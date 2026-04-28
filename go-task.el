@@ -77,29 +77,39 @@ Return the trimmed command output on success."
   "Run go-task asynchronously with ARGS, showing output in a buffer."
   (let* ((task-name (or (car args) "default"))
          (base-buffer-name (format "*go-task: %s*" task-name))
-         (buffer-name
-          (if (when-let* ((buffer (get-buffer base-buffer-name))
-                          (process (get-buffer-process buffer)))
-                (process-live-p process))
-              (generate-new-buffer-name base-buffer-name)
-            base-buffer-name))
-         (buffer (get-buffer-create buffer-name)))
-    (with-current-buffer buffer
-      (let ((inhibit-read-only t))
-        (erase-buffer)))
-    (let ((process-connection-type t))
-      (apply #'make-comint-in-buffer "go-task" buffer go-task-command nil args))
-    (with-current-buffer buffer
-      (setq-local comint-password-prompt-regexp
-                  (if go-task-use-minibuffer-password-prompts
-                      comint-password-prompt-regexp
-                    "\\`a\\'"))
-      (goto-char (point-max)))
-    (pop-to-buffer buffer))
-  (message "Running go-task%s"
-           (if args
-               (format " %s" (mapconcat #'identity args " "))
-             "")))
+         (buffer (get-buffer-create base-buffer-name))
+         (existing-process (get-buffer-process buffer)))
+    (if (and (process-live-p existing-process)
+             (not
+              (y-or-n-p
+               (format "Task `%s' is already running. Restart it? "
+                       task-name))))
+        (progn
+          (pop-to-buffer buffer)
+          (message "Task `%s' is already running" task-name))
+      (when (process-live-p existing-process)
+        (delete-process existing-process))
+      (with-current-buffer buffer
+        (let ((inhibit-read-only t))
+          (erase-buffer)))
+      (let ((process-connection-type t))
+        (apply #'make-comint-in-buffer
+               (format "go-task: %s" task-name)
+               buffer
+               go-task-command
+               nil
+               args))
+      (with-current-buffer buffer
+        (setq-local comint-password-prompt-regexp
+                    (if go-task-use-minibuffer-password-prompts
+                        comint-password-prompt-regexp
+                      "\\`a\\'"))
+        (goto-char (point-max)))
+      (pop-to-buffer buffer)
+      (message "Running go-task%s"
+               (if args
+                   (format " %s" (mapconcat #'identity args " "))
+                 "")))))
 
 
 ;;;###autoload
