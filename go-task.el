@@ -28,6 +28,7 @@
 (require 'compile)
 (require 'seq)
 (require 'subr-x)
+(require 'json)
 
 
 (defgroup go-task nil
@@ -82,16 +83,29 @@ Return the trimmed command output on success."
         (message "Taskfile.yml created with go-task --init")
       (user-error "`go-task --init` failed: %s" (string-trim output)))))
 
-(defun go-task--parse-task-list (output)
-  "Convert go-task --list OUTPUT into a list of task names."
-  (split-string output "\n" t))
-
 
 (defun go-task--get-tasks ()
-  "Return a list of available task names from go-task."
-  (let ((output (go-task--call-or-error "--list" "--silent")))
-    (or (go-task--parse-task-list output)
-        (user-error "No go-task tasks found"))))
+  "Return a list of available tasks from go-task.
+
+The list is obtained by calling `go-task --list --json` and parsing the
+output as JSON. Each task is represented as a plist with keys :name,
+:desc, and :default."
+  (when-let* ((output (go-task--call-or-error "--list" "--json"))
+              (json-array-type 'list)
+              (json-object-type 'plist)
+              (tasks-plist (json-read-from-string output))
+              (tasks (plist-get tasks-plist :tasks)))
+    tasks))
+
+
+(defun go-task--get-tasks-for-completing-read ()
+  "Return an alist of task names and tasks.
+
+All this does is getting the list of tasks via `go-task--get-tasks' and
+converting it into an alist where the keys are task names and the values
+are the corresponding task. This list is suitable for `completing-read'."
+  (when-let* ((tasks (go-task--get-tasks)))
+    (seq-map (lambda (task) (cons (plist-get task :name) task)) tasks)))
 
 
 ;;;###autoload
@@ -101,11 +115,37 @@ With PREFIX (\[universal-argument]), run the default task without prompting."
   (interactive "P")
   (if prefix
       (go-task--run-command)
-    (let* ((tasks (go-task--get-tasks))
-           (default (car tasks))
-           (choice
-            (completing-read "Run go-task task: " tasks nil t nil nil default)))
-      (go-task--run-command choice))))
+    (let* ((tasks (go-task--get-tasks-for-completing-read))
+           (max-name-width
+            (apply #'max
+                   0
+                   (mapcar (lambda (task) (string-width (car task))) tasks)))
+           (completion-extra-properties
+            `(:affixation-function
+              ,(lambda (candidates)
+                 (mapcar
+                  (lambda (candidate)
+                    (let* ((task (alist-get candidate tasks nil nil #'string=))
+                           (desc (or (plist-get task :desc) ""))
+                           (padding
+                            (make-string
+                             (max 2
+                                  (+ 2
+                                     (- max-name-width
+                                        (string-width candidate))))
+                             ?\s))
+                           (suffix
+                            (if (string-empty-p desc)
+                                ""
+                              (concat
+                               padding
+                               (propertize desc 'face 'font-lock-doc-face))
+                              )))
+                      (list candidate "" suffix)))
+                  candidates))))
+           (choice (completing-read "Run go-task task: " tasks nil t nil nil))
+           (task (alist-get choice tasks nil nil #'string=)))
+      (go-task--run-command (or (plist-get task :name) choice)))))
 
 
 ;;;###autoload
