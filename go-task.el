@@ -73,6 +73,17 @@ Return the trimmed command output on success."
              (string-trim output)))))
 
 
+;;;###autoload
+(defun go-task-task-running-p (&optional task-name)
+  "Return non-nil when TASK-NAME has a live go-task process.
+
+When TASK-NAME is nil, check the default task."
+  (let* ((name (or task-name "default"))
+         (buffer (get-buffer (format "*go-task: %s*" name)))
+         (process (and buffer (get-buffer-process buffer))))
+    (and process (process-live-p process))))
+
+
 (defun go-task--run-command (&rest args)
   "Run go-task asynchronously with ARGS, showing output in a buffer."
   (let* ((task-name (or (car args) "default"))
