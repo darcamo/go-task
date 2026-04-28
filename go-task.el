@@ -66,7 +66,8 @@ Return the trimmed command output on success."
   "Run go-task asynchronously with ARGS, showing output in a buffer."
   (let* ((command
           (mapconcat #'shell-quote-argument (cons go-task-command args) " "))
-         (buffer-name "*go-task*"))
+         (task-name (or (car args) "default"))
+         (buffer-name (format "*go-task: %s*" task-name)))
     (compilation-start command 'compilation-mode (lambda (_) buffer-name)))
   (message "Running go-task%s"
            (if args
