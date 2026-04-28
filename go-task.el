@@ -26,6 +26,7 @@
 ;;; Code:
 
 (require 'compile)
+(require 'comint)
 (require 'seq)
 (require 'subr-x)
 (require 'json)
@@ -41,6 +42,15 @@
   "Executable used to run go-task commands."
   :group 'go-task
   :type 'string)
+
+
+(defcustom go-task-use-minibuffer-password-prompts t
+  "When non-nil, detect password prompts and read passwords in minibuffer.
+
+This uses `comint-watch-for-password-prompt', which handles common prompts
+such as sudo password requests."
+  :group 'go-task
+  :type 'boolean)
 
 
 (defun go-task--call (&rest args)
@@ -64,11 +74,27 @@ Return the trimmed command output on success."
 
 (defun go-task--run-command (&rest args)
   "Run go-task asynchronously with ARGS, showing output in a buffer."
-  (let* ((command
-          (mapconcat #'shell-quote-argument (cons go-task-command args) " "))
-         (task-name (or (car args) "default"))
-         (buffer-name (format "*go-task: %s*" task-name)))
-    (compilation-start command 'compilation-mode (lambda (_) buffer-name)))
+  (let* ((task-name (or (car args) "default"))
+         (base-buffer-name (format "*go-task: %s*" task-name))
+         (buffer-name
+          (if (when-let* ((buffer (get-buffer base-buffer-name))
+                          (process (get-buffer-process buffer)))
+                (process-live-p process))
+              (generate-new-buffer-name base-buffer-name)
+            base-buffer-name))
+         (buffer (get-buffer-create buffer-name)))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t))
+        (erase-buffer)))
+    (let ((process-connection-type t))
+      (apply #'make-comint-in-buffer "go-task" buffer go-task-command nil args))
+    (with-current-buffer buffer
+      (setq-local comint-password-prompt-regexp
+                  (if go-task-use-minibuffer-password-prompts
+                      comint-password-prompt-regexp
+                    "\\`a\\'"))
+      (goto-char (point-max)))
+    (pop-to-buffer buffer))
   (message "Running go-task%s"
            (if args
                (format " %s" (mapconcat #'identity args " "))
@@ -140,8 +166,7 @@ With PREFIX (\[universal-argument]), run the default task without prompting."
                                 ""
                               (concat
                                padding
-                               (propertize desc 'face 'font-lock-doc-face))
-                              )))
+                               (propertize desc 'face 'font-lock-doc-face)))))
                       (list candidate "" suffix)))
                   candidates))))
            (choice (completing-read "Run go-task task: " tasks nil t nil nil))
