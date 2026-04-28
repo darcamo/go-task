@@ -171,7 +171,10 @@ are the corresponding task. This list is suitable for `completing-read'."
  "go-task-tasks"
  "Major mode for listing go-task tasks."
  (setq-local tabulated-list-format
-             [("Task" 30 t) ("Description" 50 t) ("Up-to-date" 12 t)])
+             [("Task" 30 t)
+              ("Description" 50 t)
+              ("Up-to-date" 12 t)
+              ("Running" 10 t)])
  (tabulated-list-init-header))
 
 
@@ -243,6 +246,11 @@ With PREFIX (\[universal-argument]), run the default task without prompting."
                               (up-to-date
                                (if is-up-to-date
                                    "yes"
+                                 "no"))
+                              (is-running (go-task-task-running-p name))
+                              (running
+                               (if is-running
+                                   "yes"
                                  "no")))
                          (list
                           name
@@ -253,7 +261,12 @@ With PREFIX (\[universal-argument]), run the default task without prompting."
                                        'face
                                        (if is-up-to-date
                                            'success
-                                         'error))))))
+                                         'error))
+                           (propertize running
+                                       'face
+                                       (if is-running
+                                           'success
+                                         'shadow))))))
                      tasks))
         (tabulated-list-print t))
       (display-buffer (current-buffer)))))
