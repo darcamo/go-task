@@ -125,7 +125,18 @@ kill the buffer itself. Return non-nil when a live process was killed."
                buffer
                go-task-command
                nil
-               args))
+               args)
+        ;; Let's add a sentinel to the process to refresh the tasks list buffer
+        ;; when the process exits.
+        (when-let* ((process (get-buffer-process buffer)))
+          (let ((previous-sentinel (process-sentinel process)))
+            (set-process-sentinel
+             process
+             (lambda (proc event)
+               (when previous-sentinel
+                 (funcall previous-sentinel proc event))
+               (when (memq (process-status proc) '(exit signal))
+                 (go-task--refresh-tasks-list-buffer)))))))
       (with-current-buffer buffer
         (setq-local comint-password-prompt-regexp
                     (if go-task-use-minibuffer-password-prompts
@@ -173,10 +184,61 @@ are the corresponding task. This list is suitable for `completing-read'."
     (seq-map (lambda (task) (cons (plist-get task :name) task)) tasks)))
 
 
+(defun go-task--tasks-tabulated-entries ()
+  "Return tabulated entries for `go-task-list-tasks-mode'."
+  (mapcar
+   (lambda (task)
+     (let* ((name (or (plist-get task :name) ""))
+            (desc (or (plist-get task :desc) ""))
+            (up-to-date-value (plist-get task :up_to_date))
+            (is-up-to-date
+             (and up-to-date-value (not (eq up-to-date-value :json-false))))
+            (up-to-date
+             (if is-up-to-date
+                 "yes"
+               "no"))
+            (is-running (go-task-task-running-p name))
+            (running
+             (if is-running
+                 "yes"
+               "no")))
+       (list
+        name
+        (vector
+         (propertize name 'face 'font-lock-function-name-face)
+         (propertize desc 'face 'font-lock-doc-face)
+         (propertize up-to-date
+                     'face
+                     (if is-up-to-date
+                         'success
+                       'error))
+         (propertize running
+                     'face
+                     (if is-running
+                         'success
+                       'shadow))))))
+   (go-task--get-tasks)))
+
+
+(defun go-task-list-tasks-refresh ()
+  "Refresh entries in the current `go-task-list-tasks-mode' buffer."
+  (setq-local tabulated-list-entries (go-task--tasks-tabulated-entries))
+  (tabulated-list-print t))
+
+
+(defun go-task--refresh-tasks-list-buffer ()
+  "Refresh `*go-task tasks*' buffer if it exists."
+  (when-let* ((buffer (get-buffer "*go-task tasks*")))
+    (with-current-buffer buffer
+      (when (derived-mode-p 'go-task-list-tasks-mode)
+        (go-task-list-tasks-refresh)))))
+
+
 (defvar go-task-list-tasks-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map tabulated-list-mode-map)
     (define-key map (kbd "RET") #'go-task-list-tasks-run-task)
+    (define-key map (kbd "k") #'go-task-list-tasks-kill-task)
     map)
   "Keymap for `go-task-list-tasks-mode'.")
 
@@ -191,6 +253,7 @@ are the corresponding task. This list is suitable for `completing-read'."
               ("Description" 50 t)
               ("Up-to-date" 12 t)
               ("Running" 10 t)])
+ (add-hook 'tabulated-list-revert-hook #'go-task-list-tasks-refresh nil t)
  (tabulated-list-init-header))
 
 
@@ -198,7 +261,25 @@ are the corresponding task. This list is suitable for `completing-read'."
   "Run the task on the current line in `go-task-list-tasks-mode'."
   (interactive)
   (if-let* ((task-name (tabulated-list-get-id)))
-      (go-task--run-command task-name)
+      (let ((list-buffer (current-buffer)))
+        (go-task--run-command task-name)
+        (when (buffer-live-p list-buffer)
+          (with-current-buffer list-buffer
+            (go-task-list-tasks-refresh))))
+    (user-error "No task on current line")))
+
+
+(defun go-task-list-tasks-kill-task ()
+  "Kill the running task on the current line in `go-task-list-tasks-mode'."
+  (interactive)
+  (if-let* ((task-name (tabulated-list-get-id)))
+      (if (go-task-task-running-p task-name)
+          (if (go-task-kill-running-task task-name t)
+              (progn
+                (go-task-list-tasks-refresh)
+                (message "Killed running task `%s'" task-name))
+            (message "Keeping running task `%s'" task-name))
+        (message "Task `%s' is not running" task-name))
     (user-error "No task on current line")))
 
 
@@ -245,47 +326,12 @@ With PREFIX (\[universal-argument]), run the default task without prompting."
 (defun go-task-list-tasks ()
   "Show available go-task tasks in a tabulated list buffer."
   (interactive)
-  (let ((tasks (go-task--get-tasks)))
-    (with-current-buffer (get-buffer-create "*go-task tasks*")
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (go-task-list-tasks-mode)
-        (setq-local tabulated-list-entries
-                    (mapcar
-                     (lambda (task)
-                       (let* ((name (or (plist-get task :name) ""))
-                              (desc (or (plist-get task :desc) ""))
-                              (up-to-date-value (plist-get task :up_to_date))
-                              (is-up-to-date
-                               (and up-to-date-value
-                                    (not (eq up-to-date-value :json-false))))
-                              (up-to-date
-                               (if is-up-to-date
-                                   "yes"
-                                 "no"))
-                              (is-running (go-task-task-running-p name))
-                              (running
-                               (if is-running
-                                   "yes"
-                                 "no")))
-                         (list
-                          name
-                          (vector
-                           (propertize name 'face 'font-lock-function-name-face)
-                           (propertize desc 'face 'font-lock-doc-face)
-                           (propertize up-to-date
-                                       'face
-                                       (if is-up-to-date
-                                           'success
-                                         'error))
-                           (propertize running
-                                       'face
-                                       (if is-running
-                                           'success
-                                         'shadow))))))
-                     tasks))
-        (tabulated-list-print t))
-      (display-buffer (current-buffer)))))
+  (with-current-buffer (get-buffer-create "*go-task tasks*")
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (go-task-list-tasks-mode)
+      (go-task-list-tasks-refresh))
+    (display-buffer (current-buffer))))
 
 (provide 'go-task)
 ;;; go-task.el ends here
