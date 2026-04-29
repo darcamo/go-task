@@ -84,6 +84,23 @@ When TASK-NAME is nil, check the default task."
     (and process (process-live-p process))))
 
 
+;;;###autoload
+(defun go-task-kill-running-task (task-name &optional confirm)
+  "Kill the running process for TASK-NAME.
+
+When CONFIRM is non-nil, ask before killing the process.
+This only kills the process associated with TASK-NAME's buffer and does not
+kill the buffer itself. Return non-nil when a live process was killed."
+  (let* ((name (or task-name "default"))
+         (buffer (get-buffer (format "*go-task: %s*" name)))
+         (process (and buffer (get-buffer-process buffer))))
+    (when (and (process-live-p process)
+               (or (not confirm)
+                   (y-or-n-p (format "Kill running task `%s'? " name))))
+      (delete-process process)
+      t)))
+
+
 (defun go-task--run-command (&rest args)
   "Run go-task asynchronously with ARGS, showing output in a buffer."
   (let* ((task-name (or (car args) "default"))
@@ -98,8 +115,7 @@ When TASK-NAME is nil, check the default task."
         (progn
           (pop-to-buffer buffer)
           (message "Task `%s' is already running" task-name))
-      (when (process-live-p existing-process)
-        (delete-process existing-process))
+      (go-task-kill-running-task task-name)
       (with-current-buffer buffer
         (let ((inhibit-read-only t))
           (erase-buffer)))
